@@ -120,7 +120,7 @@ def rand_crop_array(img): # input size (l,w, channel)
 im_size = (100, 100)
 def rand_crop_tf(img):
     [temp1, temp2] =[randint(200,400),randint(200,400)]
-    return tf.image.resize(tf.image.random_crop(img, size=(temp1, temp2, 40)), size = im_size).numpy()
+    return tf.image.resize(tf.image.random_crop(img, size=(temp1, temp2, 40)), size = im_size)
 
 #%% negative augmentation 
 from random import randint
@@ -138,12 +138,46 @@ def frame_repeat(img):
 
 # Use of np.stack 
 
+
+
 #%% Data preparation
 
 i  = randint(40, 8900)
 q1 =  np.transpose(data[i:i+40, :,:,1], [1,2,0]) # for now green channel only
 k_pos1 = rand_crop_tf(q1)
 
-i1 = i+np.random.choice([-1,1])+randint(10,20)
+i1 = i+np.random.choice([-1,1])*randint(10,20)
 q2 =  np.transpose(data[i1:i1+40, :,:,1], [1,2,0]) # for now green channel only
-k_pos2 = rand_crop_tf(q1)
+k_pos2 = rand_crop_tf(q2)
+
+q1 = tf.image.resize(q1, size = im_size)
+q2 = tf.image.resize(q2, size = im_size)
+
+k_neg1 = rand_frame_shuf(q1.numpy())
+k_neg2 = frame_repeat(q1.numpy())
+
+k_neg3 = rand_frame_shuf(q2.numpy())
+k_neg4 = frame_repeat(q2.numpy())
+
+x_train = tf.stack([q1, k_pos1, q2, k_pos2, k_neg1, k_neg2, k_neg3, k_neg4])/255.0
+
+# good version of code https://stackoverflow.com/questions/62793043/tensorflow-implementation-of-nt-xent-contrastive-loss-function
+# simclr loss https://github.com/margokhokhlova/NT_Xent_loss_tensorflow
+
+#%% loss function 
+
+class Contrastive_loss(tf.keras.layers.Layer):
+    def __init__(self, tau = 1, **kwargs):
+        super(Contrastive_loss, self).__init__()
+        self.tau = tau
+        self.similarity = tf.keras.losses.CosineSimilarity(axis=-1, reduction=tf.keras.losses.Reduction.NONE)
+        
+    def get_config(self):
+        return {"tau": self.tau}
+    
+    def call(self, embed):
+        mul_res = tf.exp(-1*self.similarity(embed[0], embed[1:])/self.tau)
+        logits = tf.keras.activations.sigmoid(mul_res)
+        return -tf.math.log(logits[0])
+    
+# Optimization 
