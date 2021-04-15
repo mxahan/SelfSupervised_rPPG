@@ -216,6 +216,6 @@ def trainNet(net):
         
 #%% Training main
 
-with tf.device('gpu:0'):
+with tf.device('gpu:0'): #very important
     trainNet(neural_net)
     
