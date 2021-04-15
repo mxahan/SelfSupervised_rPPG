@@ -107,7 +107,8 @@ cv2.destroyAllWindows()
 data =  np.array(data)
 #print(data.nbytes)
 
-
+#%% data clearning 
+data =data[1000:10000]
 
 #%% positive augmentation 
 
@@ -142,25 +143,27 @@ def frame_repeat(img):
 
 #%% Data preparation
 
-i  = randint(40, 8900)
-q1 =  np.transpose(data[i:i+40, :,:,1], [1,2,0]) # for now green channel only
-k_pos1 = rand_crop_tf(q1)
-
-i1 = i+np.random.choice([-1,1])*randint(10,20)
-q2 =  np.transpose(data[i1:i1+40, :,:,1], [1,2,0]) # for now green channel only
-k_pos2 = rand_crop_tf(q2)
-
-q1 = tf.image.resize(q1, size = im_size)
-q2 = tf.image.resize(q2, size = im_size)
-
-k_neg1 = rand_frame_shuf(q1.numpy())
-k_neg2 = frame_repeat(q1.numpy())
-
-k_neg3 = rand_frame_shuf(q2.numpy())
-k_neg4 = frame_repeat(q2.numpy())
-
-x_train = tf.stack([q1, k_pos1, q2, k_pos2, k_neg1, k_neg2, k_neg3, k_neg4])/255.0
-
+def get_data():
+    i  = randint(40, 8900)
+    q1 =  np.transpose(data[i:i+40, :,:,1], [1,2,0]) # for now green channel only
+    k_pos1 = rand_crop_tf(q1)
+    
+    i1 = i+np.random.choice([-1,1])*randint(10,20)
+    q2 =  np.transpose(data[i1:i1+40, :,:,1], [1,2,0]) # for now green channel only
+    k_pos2 = rand_crop_tf(q2)
+    
+    q1 = tf.image.resize(q1, size = im_size)
+    q2 = tf.image.resize(q2, size = im_size)
+    
+    k_neg1 = rand_frame_shuf(q1.numpy())
+    k_neg2 = frame_repeat(q1.numpy())
+    
+    k_neg3 = rand_frame_shuf(q2.numpy())
+    k_neg4 = frame_repeat(q2.numpy())
+    
+    x_train = tf.stack([q1, k_pos1, q2, k_pos2, k_neg1, k_neg2, k_neg3, k_neg4])/255.0
+    return x_train
+# simclr configuration later
 # good version of code https://stackoverflow.com/questions/62793043/tensorflow-implementation-of-nt-xent-contrastive-loss-function
 # simclr loss https://github.com/margokhokhlova/NT_Xent_loss_tensorflow
 
@@ -177,7 +180,42 @@ class Contrastive_loss(tf.keras.layers.Layer):
     
     def call(self, embed):
         mul_res = tf.exp(-1*self.similarity(embed[0], embed[1:])/self.tau)
-        logits = tf.keras.activations.sigmoid(mul_res)
+        logits = mul_res/tf.reduce_sum(mul_res)
         return -tf.math.log(logits[0])
     
-# Optimization 
+#%% Network Definition 
+
+from net_work_def import CNN_back, MtlNetwork_head
+#%% 
+body = CNN_back()
+proj_head = MtlNetwork_head(20)
+neural_net = tf.keras.Sequential([body, proj_head])
+
+
+#%% Optimization 
+
+loss_crit = Contrastive_loss(1)
+
+optimizer= tf.keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-07)
+
+
+
+
+def trainNet(net):
+    for step in range(6000):
+        x = get_data()
+        with tf.GradientTape() as g:
+            pred =  neural_net(x, training = True) 
+            loss =  loss_crit(pred)  
+        trainable_variables =  neural_net.trainable_variables
+        gradients =  g.gradient(loss, trainable_variables)  
+        optimizer.apply_gradients(zip(gradients, trainable_variables))
+        
+        if step % (500) == 0:
+            print("step %i, loss: %f" %(step, loss))
+        
+#%% Training main
+
+with tf.device('gpu:0'):
+    trainNet(neural_net)
+    
