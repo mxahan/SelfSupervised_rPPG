@@ -103,8 +103,6 @@ class CNN_back(Model): # Vitamon network except inception layer
         self.avgpool2 = layers.AveragePooling2D(2, strides= 2)
         
         self.flatten = layers.Flatten()
-        
-
 
 
     # Set forward pass.

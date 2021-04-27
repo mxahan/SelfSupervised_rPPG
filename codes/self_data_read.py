@@ -113,9 +113,9 @@ data =data[1000:10000]
 #%% positive augmentation 
 
 # croping
-# non-tensor 
-def rand_crop_array(img): # input size (l,w, channel)
-    return cv2.resize(img[100:400, 100:400,:], (100, 100))
+# # non-tensor 
+# def rand_crop_array(img): # input size (l,w, channel)
+#     return cv2.resize(img[100:400, 100:400,:], (100, 100))
 
 # tensor 
 im_size = (100, 100)
@@ -142,13 +142,20 @@ def frame_repeat(img):
 
 
 #%% Data preparation
+import pdb
 
 def get_data():
     i  = randint(40, 8900)
     q1 =  np.transpose(data[i:i+40, :,:,1], [1,2,0]) # for now green channel only
     k_pos1 = rand_crop_tf(q1)
+    k_pos11 = tf.image.resize(np.transpose(data[(i+26):i+66, :,:,1], [1,2,0]), size = im_size)
+    ll = list([k_pos1, k_pos11])
     
-    i1 = i+np.random.choice([-1,1])*randint(10,20)
+    # pdb.set_trace()
+    
+    k_pos = ll[randint(0, len(ll)-1)]    
+    
+    i1 = i+np.random.choice([-1,1])*randint(13,18)
     q2 =  np.transpose(data[i1:i1+40, :,:,1], [1,2,0]) # for now green channel only
     k_pos2 = rand_crop_tf(q2)
     
@@ -159,10 +166,12 @@ def get_data():
     k_neg2 = frame_repeat(q1.numpy())
     
     k_neg3 = rand_frame_shuf(q2.numpy())
+    k_neg5 = rand_frame_shuf(q2.numpy())
     k_neg4 = frame_repeat(q2.numpy())
     
-    x_train = tf.stack([q1, k_pos1, q2, k_pos2, k_neg1, k_neg2, k_neg3, k_neg4])/255.0
+    x_train = tf.stack([q1, k_pos, q2, k_pos2, k_neg1, k_neg2, k_neg3, k_neg4, k_neg5])/255.0
     return x_train
+
 # simclr configuration later
 # good version of code https://stackoverflow.com/questions/62793043/tensorflow-implementation-of-nt-xent-contrastive-loss-function
 # simclr loss https://github.com/margokhokhlova/NT_Xent_loss_tensorflow
@@ -174,15 +183,21 @@ class Contrastive_loss(tf.keras.layers.Layer):
         super(Contrastive_loss, self).__init__()
         self.tau = tau
         self.similarity = tf.keras.losses.CosineSimilarity(axis=-1, reduction=tf.keras.losses.Reduction.NONE)
+        self.criterion = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
         
     def get_config(self):
         return {"tau": self.tau}
     
-    def call(self, embed):
-        mul_res = tf.exp(-1*self.similarity(embed[0], embed[1:])/self.tau)
-        logits = mul_res/tf.reduce_sum(mul_res)
-        return -tf.math.log(logits[0])
-    
+    def call(self, embed, embeds):
+        mul_res = tf.exp(-1*self.similarity(embed, embeds)/self.tau)
+        logits = mul_res/tf.math.reduce_sum(mul_res)
+        y = tf.one_hot(0, depth=mul_res.shape[0])
+        return self.criterion(y, logits)
+
+# did not work straight forwardly!! may need to find way around
+
+# triplet/max margin loss
+
 #%% Network Definition 
 
 from net_work_def import CNN_back, MtlNetwork_head
@@ -194,28 +209,31 @@ neural_net = tf.keras.Sequential([body, proj_head])
 
 #%% Optimization 
 
-loss_crit = Contrastive_loss(1)
+loss_crit = Contrastive_loss(0.25)
 
-optimizer= tf.keras.optimizers.Adam(learning_rate=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-07)
+optimizer= tf.keras.optimizers.Adam(learning_rate=0.00005, beta_1=0.9, beta_2=0.999, epsilon=1e-07)
+
+optimizer1  = tf.optimizers.SGD(learning_rate=0.0004)
 
 
-
-
-def trainNet(net):
-    for step in range(6000):
+def trainNetProb(net):
+    for step in range(100000):
         x = get_data()
         with tf.GradientTape() as g:
-            pred =  neural_net(x, training = True) 
-            loss =  loss_crit(pred)  
-        trainable_variables =  neural_net.trainable_variables
+            pred =  net(x[0], training = True) 
+            preds = net(x[1:], training = True)
+            loss =  loss_crit(pred,preds)  
+        trainable_variables =  net.trainable_variables
         gradients =  g.gradient(loss, trainable_variables)  
-        optimizer.apply_gradients(zip(gradients, trainable_variables))
+        optimizer1.apply_gradients(zip(gradients, trainable_variables))
         
         if step % (500) == 0:
             print("step %i, loss: %f" %(step, loss))
         
 #%% Training main
+# importance of the sensitivity
+
+# training true and false matters really!!
 
 with tf.device('gpu:0'): #very important
-    trainNet(neural_net)
-    
+    trainNetProb(neural_net)
