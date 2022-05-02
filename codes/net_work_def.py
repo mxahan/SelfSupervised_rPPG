@@ -168,7 +168,7 @@ class MtlNetwork_head(Model): # Vitamon network except inception layer
         x = self.fc1_2(x)
 
         x = self.out1(x)
-        x = tf.nn.tanh(x)
+        x = tf.nn.relu(x)
         # print(x3.shape)
         return x
     
