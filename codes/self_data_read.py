@@ -5,6 +5,7 @@ Created on Thu Apr 23 10:06:57 2020
 
 @author: zahid
 """
+adfaf
 #%% libraries
 
 import tensorflow as tf
@@ -31,6 +32,7 @@ from random import seed, randint
 # from sklearn.model_selection import train_test_split
 
 import pandas as pd
+import pickle
 
 
 #%%  Data Load files from the directory
@@ -43,7 +45,7 @@ import pandas as pd
 #iD_ir = '../../../Dataset/Merl_Tim/Subject1_still/RGB_raw'
 #iD_ir = '../../../Dataset/Merl_Tim/Subject1_still/RGB_demosaiced'
 
-path_dir = '../../../Dataset/Personal_collection/MPSC_rppg/subject_003/trial_002/video/'
+path_dir = '../../../Dataset/Personal_collection/MPSC_rppg/subject_006/trial_001/video/'
 
 
 
@@ -79,7 +81,7 @@ def data_read(files, im_size = (200, 200)):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
         gray = gray[:,:,1]
-        gray = gray[50:1000, 620:1380]
+        gray = gray[0:1000, 400:1400]
         gray = cv2.resize(gray, im_size)
         # pdb.set_trace()
         data.append(gray)
@@ -110,12 +112,13 @@ def alignment_data(data, path_dir):
     EventMark = pd.read_csv(path_dir+'../empatica_e4/tags.csv')
     evmarknp =  EventMark.to_numpy()
     ppgnp =  ppgtotal.to_numpy()
-    start_gap =  evmarknp[0] - 1594845887
+    start_gap =  evmarknp[0] -   1599770587
     end_point =  evmarknp[1] - evmarknp[0]
     
     ppgnp_align =  ppgnp[np.int(start_gap*64):np.int((start_gap+end_point)*64)]
     
-    data_align = data[1110:1110+np.int(end_point*30)+5]
+    data_align =  data[676 : 676 +np.int(end_point*30)]
+    
     ppgnp_align = np.reshape(ppgnp_align, [ppgnp_align.shape[0],1]) 
 
     return data_align, ppgnp_align
@@ -124,10 +127,10 @@ data_align, ppgnp_align = alignment_data(data, path_dir)
 del data
 
 #%% pickle save
-import pickle
+
 input("pickle save ahead")
 # Saving 
-save_path  =  '../../../Dataset/Personal_collection/MPSC_rppg/Pickle_files_rppg/sub_002_003.pkl'
+save_path  =  '../../../Dataset/Personal_collection/MPSC_rppg/Pickle_files_rppg/sub_006_001.pkl'
 def pickle_save(data_align, ppgnp_align, save_path):
     with open(save_path, 'wb') as f:
         pickle.dump([data_align, ppgnp_align], f)  #NickName: SAD
@@ -136,14 +139,45 @@ def pickle_save(data_align, ppgnp_align, save_path):
 
 #%% pickle load
 # Loading 
+def get_pkl_files():
+    save_path  =  '../../../Dataset/Personal_collection/MPSC_rppg/Pickle_files_rppg/'
+    
+    dataPath = os.path.join(save_path, '*.pkl')
+    
+    files = glob.glob(dataPath)  # care about the serialization
+    # end load pathdir
+    list.sort(files) # serialing the data
+    return files 
+
+files = get_pkl_files()
+
+
 input("pickle load ahead")
 
 def load_pickle(save_path):
+
+
     with open(save_path, 'rb') as f:
         a,b = pickle.load(f)
         return a, b
 
-data_align, ppgnp_align= load_pickle(save_path= save_path)
+
+def get_data(files):
+    for i in [0]:
+        
+        data_align, ppgnp_align= load_pickle(save_path= files[i])
+        
+        if 'data_a' in locals():
+            data_a = np.append(data_a, data_align, axis = 0)
+            ppg_a = np.append(ppg_a,ppgnp_align, axis =0)
+        else:
+            data_a = data_align
+            ppg_a = ppgnp_align
+        
+    return data_a, ppg_a
+
+data_align, ppgnp_align =  get_data(files)
+
 
 
 #%% Prepare data loader
@@ -200,8 +234,8 @@ class data_loader():
     def img_resize(self, img):
         return tf.image.resize(img, self.im_size)
     
-    def rand_crop_tf(self, pos):
-        img, _, _ =  self.get_sup_samp(pos= pos, reSiz=False)
+    def rand_crop_tf(self, pos, frame_gap = 1):
+        img, _, _ =  self.get_sup_samp(pos= pos, frame_gap=frame_gap, reSiz=False)
         [temp1, temp2] =[randint(120,180),randint(120,180)]
         img = tf.image.random_crop(img, size=(temp1, temp2, 40))
         
@@ -211,54 +245,53 @@ class data_loader():
         img, ppg_gt, _ = self.get_sup_samp(pos= pos, frame_gap= 2)
         return img, ppg_gt
     
-    def img_shifted(self, pos, sv):
-        img, _, _ =  self.get_sup_samp(pos = pos+sv)   
+    def img_shifted(self, pos, sv, frame_gap = 1):
+        img, _, _ =  self.get_sup_samp(pos = pos+sv, frame_gap=frame_gap)   
         return img
     
+    def pos_sample(self, pos, frame_gap = 1, pos_op = [0, 1]):
+        dum = choice(pos_op)
+        if dum ==0:
+            pq = self.img_shifted(pos = pos, sv = choice(list(range(19,23)))*choice([-1, 1])
+                                  , frame_gap=frame_gap)
+        elif dum ==1:
+            pq = self.rand_crop_tf(pos= pos, frame_gap=frame_gap)    
+        return pq
+    
+    def neg_sample(self, query,pos, neg_op = [0,1,2,3,3,0,3]):
+        dum = choice(neg_op)
+        if dum==0:
+            nq = self.img_shifted(pos = pos, sv = choice(list(range(9,12)))*choice([-1, 1]))
+        elif dum==1:
+            nq = self.frame_repeat(query)
+        elif dum==2:
+            nq = self.rand_frame_shuf(query)
+
+        elif dum==3:
+            nq, _ = self.fps_halfing(pos = None)
+
+        return nq       
+
     def get_CL_data(self, pve = 1, nve = 5):
         vs = []
-        query, _, pos = self.get_sup_samp()
+        frame_gap = 1 if random.random() <0.9 else 2
+        query, _, pos = self.get_sup_samp(pos = None, frame_gap= frame_gap)
         vs.append(query)
-        pos_op = [0, 1]
-        for _ in range(pve):
-            dum = choice(pos_op)
-            if dum ==0:
-                pq = self.img_shifted(pos = pos, sv = choice(list(range(19,23)))*choice([-1, 1]))
-                vs.append(pq)
-            elif dum ==1:
-                pq = self.rand_crop_tf(pos= pos)
-                vs.append(pq)
         
-        neg_op = [0, 1, 2, 3]
+        for _ in range(pve):
+            pq = self.pos_sample(pos = pos, frame_gap=frame_gap)
+            vs.append(pq)
+        
+        neg_op = [0,3] if frame_gap ==1 else [0,1,2]
         for _ in range(nve):
-            dum = choice(neg_op)
-            if dum==0:
-                nq = self.img_shifted(pos = pos, sv = choice(list(range(9,12)))*choice([-1, 1]))
-                vs.append(nq)
-            elif dum==1:
-                nq = self.frame_repeat(query)
-                vs.append(nq)
-            elif dum==2:
-                nq = self.rand_frame_shuf(query)
-                vs.append(nq)
-            elif dum==3:
-                nq, _ = self.fps_halfing(pos = pos)
-                vs.append(nq)
+            nq = self.neg_sample(query = query, pos = pos, neg_op=neg_op)
+            vs.append(nq)
+
                 
         return  tf.cast(tf.stack(vs), tf.float32)/255.0
  
             
 
-
-
-
-# Use of np.stack 
-
-
-
-
-
-# simclr configuration later
 # good version of code https://stackoverflow.com/questions/62793043/tensorflow-implementation-of-nt-xent-contrastive-loss-function
 # simclr loss https://github.com/margokhokhlova/NT_Xent_loss_tensorflow
 
@@ -275,11 +308,11 @@ class Contrastive_loss(tf.keras.layers.Layer):
         return {"tau": self.tau}
     
     def call(self, embed, embeds):
-        mul_res = tf.exp(-1*self.similarity(embed, embeds)/self.tau)
-        logits = mul_res/tf.math.reduce_sum(mul_res)
-        # y = tf.one_hot(0, depth=mul_res.shape[0])
-        # return self.criterion(y, logits)
-        return -tf.math.log(logits[0])
+        logits = -1*self.similarity(embed, embeds)/self.tau
+        # logits = logits/tf.math.reduce_sum(logits)
+        y = tf.one_hot(0, depth=logits.shape[0])
+        return self.criterion(y, logits)
+        # return -tf.reduce_sum(tf.math.log(tf.nn.softmax(mul_res)[0]))
 
 
 # triplet/max margin loss
@@ -288,24 +321,49 @@ class Contrastive_loss(tf.keras.layers.Layer):
 
 from net_work_def import CNN_back, MtlNetwork_head
 #%% 
-body = CNN_back()
-proj_head = MtlNetwork_head(64)
-neural_net = tf.keras.Sequential([body, proj_head])
+def get_network(head = 64):
+    
+    body = CNN_back()
+    proj_head = MtlNetwork_head(head)
+    neural_net = tf.keras.Sequential([body, proj_head])
+    
+    return neural_net
+
+neural_net =  get_network(64)
+
+#%% Supervised Loss 
+def RootMeanSquareLoss1(y,x):
+    # pdb.set_trace()  
+    loss = tf.keras.losses.MSE(y_true = y, y_pred =x)  # initial one
+    #return tf.reduce_mean(loss)  # some other shape similarity
+     
+    loss2 = tf.reduce_mean((tf.math.abs(tf.math.sign(y))-tf.math.sign(tf.math.multiply(x,y))),axis = -1)
+    # print(loss2.shape)
+    
+    # print(tf.reduce_mean(loss), tf.reduce_mean(loss2))
+    return loss + 0.5*loss2
 
 
 #%% Optimization 
 
 loss_crit = Contrastive_loss(0.05)
 
-optimizer= tf.keras.optimizers.Adam(learning_rate=0.0008, beta_1=0.9, beta_2=0.999, epsilon=1e-07)
+optimizer= tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-07)
 
 optimizer1  = tf.optimizers.SGD(learning_rate=0.001)
 
+loss_v = []
+
+# give a zero loss to the frame repeating
+
+
+def wt_save(neural_net, save_mdl = '../../../Dataset/Merl_Tim/NNsave/SavedWM/Models/ssl_model'):
+    neural_net.save_weights(save_mdl)
 
 def trainNetProb(net):
     samp_load =  data_loader(video=data_align, ppg = ppgnp_align, bs = 1)
     for step in range(40000):
-        x = samp_load.get_CL_data(pve = 1, nve = 5)
+        x = samp_load.get_CL_data(pve = 1, nve = 8)
         with tf.GradientTape() as g:
             pred =  net(x, training = True) 
             loss =  loss_crit(pred[0:1],pred[1:])  
@@ -314,9 +372,26 @@ def trainNetProb(net):
         optimizer1.apply_gradients(zip(gradients, trainable_variables))
         
         if step % (500) == 0:
+            loss_v.append(loss)
             print("step %i, loss: %f" %(step, loss))
-        
+            
+        if step % (10000) == 0:
+            wt_save(net, save_mdl = '../../../Dataset/Merl_Tim/NNsave/SavedWM/Models/ssl_mods')
+            
+            
 #%% Training main
 
 with tf.device('gpu:0'): #very important
     trainNetProb(neural_net)
+    
+
+    
+# wt_save(neural_net)
+    
+#%% Load Weight
+
+def wt_load(neural_net, save_mdl = '../../../Dataset/Merl_Tim/NNsave/SavedWM/Models/ssl_modedfsdl'):
+    neural_net.load_weights(save_mdl)
+    return neural_net
+    
+neural_net =  wt_load(neural_net, save_mdl = '../../../Dataset/Merl_Tim/NNsave/SavedWM/Models/ssl_mods')

@@ -129,7 +129,7 @@ class CNN_back(Model): # Vitamon network except inception layer
         
         x = self.avgpool2(x)
         # later added        
-        x = self.avgpool2(x)
+        # x = self.avgpool2(x)
         
         
         # later added        
@@ -156,19 +156,19 @@ class MtlNetwork_head(Model): # Vitamon network except inception layer
     def __init__(self, num_classes):
         super(MtlNetwork_head, self).__init__()
         
-        self.fc1_1 = layers.Dense(512, activation=tf.nn.relu)
+        self.fc1_1 = layers.Dense(512)
         
-        self.fc1_2 = layers.Dense(128, activation=tf.nn.relu) # changed from 512
+        self.fc1_2 = layers.Dense(128) # changed from 512
         self.out1 = layers.Dense(num_classes)
+        self.act = tf.keras.layers.ReLU()
 
     # Set forward pass.
     def call(self, x, training=False):
         
-        x = self.fc1_1(x)
-        x = self.fc1_2(x)
+        x = self.act(self.fc1_1(x))
+        x = self.act(self.fc1_2(x))
 
-        x = self.out1(x)
-        x = tf.nn.relu(x)
+        x = self.act(self.out1(x))
         # print(x3.shape)
         return x
     
