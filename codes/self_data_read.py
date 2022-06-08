@@ -5,7 +5,7 @@ Created on Thu Apr 23 10:06:57 2020
 
 @author: zahid
 """
-adfaf
+
 #%% libraries
 
 import tensorflow as tf
@@ -33,7 +33,6 @@ from random import seed, randint
 
 import pandas as pd
 import pickle
-
 
 #%%  Data Load files from the directory
 
@@ -163,10 +162,8 @@ def load_pickle(save_path):
 
 
 def get_data(files):
-    for i in [0]:
-        
+    for i in [4]:
         data_align, ppgnp_align= load_pickle(save_path= files[i])
-        
         if 'data_a' in locals():
             data_a = np.append(data_a, data_align, axis = 0)
             ppg_a = np.append(ppg_a,ppgnp_align, axis =0)
@@ -258,7 +255,7 @@ class data_loader():
             pq = self.rand_crop_tf(pos= pos, frame_gap=frame_gap)    
         return pq
     
-    def neg_sample(self, query,pos, neg_op = [0,1,2,3,3,0,3]):
+    def neg_sample(self, query,pos, neg_op = [0,1,2,3]):
         dum = choice(neg_op)
         if dum==0:
             nq = self.img_shifted(pos = pos, sv = choice(list(range(9,12)))*choice([-1, 1]))
@@ -266,7 +263,6 @@ class data_loader():
             nq = self.frame_repeat(query)
         elif dum==2:
             nq = self.rand_frame_shuf(query)
-
         elif dum==3:
             nq, _ = self.fps_halfing(pos = None)
 
@@ -286,12 +282,8 @@ class data_loader():
         for _ in range(nve):
             nq = self.neg_sample(query = query, pos = pos, neg_op=neg_op)
             vs.append(nq)
-
-                
         return  tf.cast(tf.stack(vs), tf.float32)/255.0
  
-            
-
 # good version of code https://stackoverflow.com/questions/62793043/tensorflow-implementation-of-nt-xent-contrastive-loss-function
 # simclr loss https://github.com/margokhokhlova/NT_Xent_loss_tensorflow
 
@@ -321,7 +313,7 @@ class Contrastive_loss(tf.keras.layers.Layer):
 
 from net_work_def import CNN_back, MtlNetwork_head
 #%% 
-def get_network(head = 64):
+def get_network(head = 85):
     
     body = CNN_back()
     proj_head = MtlNetwork_head(head)
@@ -329,7 +321,7 @@ def get_network(head = 64):
     
     return neural_net
 
-neural_net =  get_network(64)
+neural_net =  get_network(60)
 
 #%% Supervised Loss 
 def RootMeanSquareLoss1(y,x):
@@ -346,11 +338,11 @@ def RootMeanSquareLoss1(y,x):
 
 #%% Optimization 
 
-loss_crit = Contrastive_loss(0.05)
+loss_crit = Contrastive_loss(tau=0.05)
 
 optimizer= tf.keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-07)
 
-optimizer1  = tf.optimizers.SGD(learning_rate=0.001)
+optimizer1  = tf.optimizers.SGD(learning_rate=0.0009)
 
 loss_v = []
 
@@ -362,7 +354,7 @@ def wt_save(neural_net, save_mdl = '../../../Dataset/Merl_Tim/NNsave/SavedWM/Mod
 
 def trainNetProb(net):
     samp_load =  data_loader(video=data_align, ppg = ppgnp_align, bs = 1)
-    for step in range(40000):
+    for step in range(30000):
         x = samp_load.get_CL_data(pve = 1, nve = 8)
         with tf.GradientTape() as g:
             pred =  net(x, training = True) 
@@ -375,7 +367,8 @@ def trainNetProb(net):
             loss_v.append(loss)
             print("step %i, loss: %f" %(step, loss))
             
-        if step % (10000) == 0:
+        if step % (9999) == 0:
+            
             wt_save(net, save_mdl = '../../../Dataset/Merl_Tim/NNsave/SavedWM/Models/ssl_mods')
             
             
@@ -383,7 +376,6 @@ def trainNetProb(net):
 
 with tf.device('gpu:0'): #very important
     trainNetProb(neural_net)
-    
 
     
 # wt_save(neural_net)
